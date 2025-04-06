@@ -1,16 +1,150 @@
-- name: Deployment
+- name: Server setup
   hosts: server
   become: false
 
+  vars:
+    ssh_users:
+      - name: "{{ lookup('env', 'SSH_MAIN_USER') }}"
+        pubkey: "{{ lookup('env', 'SSH_MAIN_PUBKEY') }}"
+      - name: "{{ lookup('env', 'SSH_BACKUP_USER') }}"
+        pubkey: "{{ lookup('env', 'SSH_BACKUP_PUBKEY') }}"
+    disable_root_password: true
+
   tasks:
-    - name: Make sure docker is installed
+    - name: Add main user
+      user:
+        name: "{{ item.name }}"
+        shell: /bin/bash
+        groups: sudo
+        append: yes
+        state: present
+      loop: "{{ ssh_users }}"
+
+    - name: Create ssh directory
+      file:
+        path: "/home/{{ item.name }}/.ssh"
+        state: directory
+        mode: '0700'
+        owner: "{{ item.name }}"
+        group: "{{ item.name }}"
+      loop: "{{ ssh_users }}"
+
+    - name: Add ssh key
+      copy:
+        content: "{{ item.pubkey }}"
+        dest: "/home/{{ item.name }}/.ssh/authorized_keys"
+        owner: "{{ item.name }}"
+        group: "{{ item.name }}"
+        mode: '0600'
+      loop: "{{ ssh_users }}"
+
+    - name: Disable root user login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+      when: disable_root_password
+
+    - name: Disable password login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+
+    - name: Restart ssh
+      service:
+        name: ssh
+        state: restarted
+
+    - name: Install automatic system updates
       apt:
-        name: docker.io
+        name: unattended-upgrades
         state: present
         update_cache: yes
 
-    - name: Make sure docker runs
+    - name: Install Fail2Ban
+      apt:
+        name: fail2ban
+        state: present
+
+    - name: Setup ssh in Jail-Config
+      blockinfile:
+        path: /etc/fail2ban/jail.local
+        create: yes
+        block: |
+          [sshd]
+          enabled = true
+          port = ssh
+          logpath = /var/log/auth.log
+          backend = systemd
+          maxretry = 3
+          bantime = 3600
+          findtime = 600
+
+    - name: Start and activate Fail2Ban
+      service:
+      name: fail2ban
+      enabled: true
+      state: restarted
+
+    - name: Install UFW
+      apt:
+        name: ufw
+        state: present
+
+    - name: UFW - Allow SSH
+      ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Activate UFW
+      ufw:
+        state: enabled
+        policy: deny
+
+    - name: Prepare docker setup
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Add docker GPG key
+      shell: |
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+
+    - name: Add docker repo
+      copy:
+        dest: /etc/apt/sources.list.d/docker.list
+        content: |
+          deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian {{ ansible_lsb.codename }} stable
+
+    - name: Update apt index
+      apt:
+        update_cache: yes
+
+    - name: Install docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: latest
+
+    - name: Start and activate docker
       service:
         name: docker
-        state: started
         enabled: true
+        state: started
+        
+    - name: Add user to docker group
+      user:
+        name: "{{ ssh_users[0].name }}"
+        groups: docker
+        append: yes
