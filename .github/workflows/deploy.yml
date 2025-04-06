@@ -1,16 +1,14 @@
 name: Deploy with Ansible
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Install Ansible
@@ -18,7 +16,7 @@ jobs:
           sudo apt update
           sudo apt install -y ansible
 
-      - name: Add SSH key
+      - name: Add SSH Key
         uses: webfactory/ssh-agent@v0.8.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
