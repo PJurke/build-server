@@ -24,8 +24,15 @@ jobs:
       - name: Create inventory from secrets
         run: |
           echo "[server]" > inventory.ini
-          echo "new-server ansible_host=${{ secrets.ANSIBLE_HOST }} ansible_user=${{ secrets.ANSIBLE_USER }}" >> inventory.ini
+          echo "target ansible_host=${{ secrets.ANSIBLE_HOST }} ansible_user=${{ secrets.ANSIBLE_USER }} ansible_python_interpreter=/usr/bin/python3" >> inventory.ini
+
+      - name: Export environment variables for Ansible
+        run: |
+          echo "SSH_MAIN_USER=${{ secrets.SSH_MAIN_USER }}" >> $GITHUB_ENV
+          echo "SSH_MAIN_PUBKEY=${{ secrets.SSH_MAIN_PUBKEY }}" >> $GITHUB_ENV
+          echo "SSH_BACKUP_USER=${{ secrets.SSH_BACKUP_USER }}" >> $GITHUB_ENV
+          echo "SSH_BACKUP_PUBKEY=${{ secrets.SSH_BACKUP_PUBKEY }}" >> $GITHUB_ENV
 
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook ansible/playbook.yml -i ansible/inventory.ini
+          ansible-playbook ansible/playbook.yml -i inventory.ini
