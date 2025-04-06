@@ -1,0 +1,16 @@
+- name: Deployment
+  hosts: server
+  become: false
+
+  tasks:
+    - name: Make sure docker is installed
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Make sure docker runs
+      service:
+        name: docker
+        state: started
+        enabled: true
